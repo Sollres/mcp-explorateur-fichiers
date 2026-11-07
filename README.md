@@ -80,6 +80,8 @@ python client.py http://127.0.0.1:8000/mcp
 | `MCP_PORT` | `8000` | Port d'écoute en HTTP |
 | `MCP_TOKENS` | (aucun) | Jetons autorisés côté serveur, format `nom:jeton,nom2:jeton2` |
 | `MCP_TOKEN` | (aucun) | Jeton utilisé par le client en HTTP |
+| `MCP_LOGS_DIR` | `./logs` | Dossier du journal d'audit |
+| `OLLAMA_MODELE` | `qwen2.5:7b` | Modèle Ollama utilisé par le client |
 
 > ⚠️ En mode `0.0.0.0`, le trafic n'est pas chiffré. Placez un reverse proxy HTTPS (Caddy, nginx) ou un tunnel (Tailscale, SSH) devant le serveur.
 
@@ -88,3 +90,14 @@ python client.py http://127.0.0.1:8000/mcp
 ```bash
 tail -n 20 logs/audit.jsonl
 ```
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Les tests travaillent dans des dossiers temporaires : ils ne lisent jamais `~/Documents` et n'écrivent jamais dans `logs/`. Ils couvrent la sécurité des chemins, la lecture de chaque format, la recherche et son cache, les plafonds, le journal d'audit, l'exécution en parallèle, l'authentification HTTP (dont un test de bout en bout avec un vrai serveur) et le client (historique, messages d'erreur).
+
+Pour sauter le test de bout en bout : `pytest -m "not lent"`.

@@ -66,8 +66,10 @@ def borner(valeur: int, mini: int, maxi: int) -> int:
 # ----------------------------------------------------------------------
 # Journal d'audit : une ligne JSON par appel d'outil
 # ----------------------------------------------------------------------
-DOSSIER_LOGS = Path(__file__).resolve().parent / "logs"
-DOSSIER_LOGS.mkdir(exist_ok=True)
+DOSSIER_LOGS = Path(
+    os.environ.get("MCP_LOGS_DIR", Path(__file__).resolve().parent / "logs")
+)
+DOSSIER_LOGS.mkdir(parents=True, exist_ok=True)
 
 journal = logging.getLogger("mcp-fichiers.audit")
 journal.setLevel(logging.INFO)
