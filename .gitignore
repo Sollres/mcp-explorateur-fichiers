@@ -1,0 +1,16 @@
+# Journal d'audit : contient des chemins de fichiers personnels
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets éventuels
+.env
+
+# macOS / éditeurs
+.DS_Store
+.vscode/
+.idea/

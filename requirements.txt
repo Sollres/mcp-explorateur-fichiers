@@ -1,0 +1,16 @@
+# Dépendances du projet mcp-fichiers (Python 3.11).
+# Installation : pip install -r requirements.txt
+# Versions testées dans l'environnement conda "mcp-fichiers".
+
+# Serveur MCP (inclut starlette, anyio et uvicorn pour le mode HTTP)
+mcp==1.30.0
+uvicorn==0.54.0
+
+# Lecture des documents
+pypdf==6.21.1
+python-docx==1.2.0
+openpyxl==3.1.5
+python-pptx==1.0.2
+
+# Client : modèle local via Ollama
+ollama==0.6.3
