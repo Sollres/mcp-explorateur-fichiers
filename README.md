@@ -1,5 +1,7 @@
 # mcp-explorateur-fichiers
 
+[![Tests](https://github.com/Sollres/mcp-explorateur-fichiers/actions/workflows/tests.yml/badge.svg)](https://github.com/Sollres/mcp-explorateur-fichiers/actions/workflows/tests.yml)
+
 Serveur MCP en Python qui permet à un modèle d'IA d'explorer, de rechercher et de lire vos fichiers locaux (PDF, Word, Excel, PowerPoint, texte), avec accès limité à un dossier, authentification par jeton et journal d'audit. Fonctionne avec un modèle local via Ollama.
 
 ## Fonctionnalités
@@ -7,7 +9,8 @@ Serveur MCP en Python qui permet à un modèle d'IA d'explorer, de rechercher et
 | Outil | Rôle |
 |---|---|
 | `lister_dossier` | Liste le contenu d'un dossier |
-| `rechercher_fichiers` | Cherche des fichiers par leur nom et/ou leur extension |
+| `rechercher_fichiers` | Cherche des fichiers par leur nom et/ou leur extension, éventuellement limités aux N derniers jours |
+| `fichiers_recents` | Liste les fichiers modifiés récemment, du plus récent au plus ancien, avec date et taille (filtres : période, nom, extension, taille) |
 | `rechercher_dans_contenu` | Cherche un mot à l'intérieur des fichiers (texte, PDF, Word, Excel, PowerPoint), avec un extrait autour du mot trouvé |
 | `lire_fichier` | Lit un fichier texte (txt, md, csv, json, py…) |
 | `lire_pdf` | Lit un PDF, éventuellement sur une plage de pages |
@@ -46,7 +49,7 @@ Le client lance le serveur lui-même :
 python client.py
 ```
 
-Exemples de questions : « Trouve mes fichiers docx dans Collins », « Quels fichiers parlent de facture ? ».
+Exemples de questions : « Trouve mes fichiers docx dans Collins », « Quels fichiers parlent de facture ? », « Quels PDF ai-je reçus cette semaine ? ».
 La commande `/lister <chemin>` appelle directement l'outil, sans passer par le modèle. `quit` pour sortir.
 
 ### Mode HTTP (serveur distant)
@@ -101,3 +104,5 @@ pytest
 Les tests travaillent dans des dossiers temporaires : ils ne lisent jamais `~/Documents` et n'écrivent jamais dans `logs/`. Ils couvrent la sécurité des chemins, la lecture de chaque format, la recherche et son cache, les plafonds, le journal d'audit, l'exécution en parallèle, l'authentification HTTP (dont un test de bout en bout avec un vrai serveur) et le client (historique, messages d'erreur).
 
 Pour sauter le test de bout en bout : `pytest -m "not lent"`.
+
+Les tests tournent aussi automatiquement sur GitHub Actions à chaque push et pull request (Python 3.11 et 3.12, Linux et macOS).

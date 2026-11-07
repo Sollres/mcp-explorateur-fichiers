@@ -45,12 +45,13 @@ async def test_journal_tronque_les_longs_arguments():
 
 
 async def test_outils_executes_en_parallele():
-    """Deux appels lents de 0,3 s en même temps doivent prendre ~0,3 s, pas 0,6 s."""
+    """Deux appels lents de 0,5 s en même temps doivent prendre ~0,5 s, pas 1 s.
+    (Marge large : les machines d'intégration continue sont parfois lentes.)"""
     debut = time.perf_counter()
     async with anyio.create_task_group() as groupe:
-        groupe.start_soon(outil_lent, 0.3)
-        groupe.start_soon(outil_lent, 0.3)
-    assert time.perf_counter() - debut < 0.5
+        groupe.start_soon(outil_lent, 0.5)
+        groupe.start_soon(outil_lent, 0.5)
+    assert time.perf_counter() - debut < 0.9
 
 
 async def test_boucle_asynchrone_non_bloquee():
@@ -63,7 +64,8 @@ async def test_boucle_asynchrone_non_bloquee():
             await anyio.sleep(0.05)
 
     async with anyio.create_task_group() as groupe:
-        groupe.start_soon(outil_lent, 0.4)
+        groupe.start_soon(outil_lent, 1.0)
         groupe.start_soon(horloge)
     assert len(ticks) == 5
-    assert ticks[-1] - ticks[0] < 0.35  # l'horloge n'a pas attendu l'outil
+    # 4 pauses de 0,05 s = 0,2 s. Si la boucle était bloquée, ce serait > 1 s.
+    assert ticks[-1] - ticks[0] < 0.7

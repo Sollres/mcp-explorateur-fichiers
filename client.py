@@ -10,6 +10,7 @@ Le modèle peut être changé avec OLLAMA_MODELE (défaut : qwen2.5:7b).
 import asyncio
 import os
 import sys
+from datetime import datetime
 
 import httpx
 import ollama
@@ -37,6 +38,15 @@ PROMPT_SYSTEME = (
     "Les chemins sont relatifs au dossier Documents. "
     "Réponds en français."
 )
+JOURS_SEMAINE = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+
+
+def prompt_systeme(maintenant: datetime | None = None) -> str:
+    """Prompt système avec la date du jour : sans elle, le modèle ne peut pas
+    traduire « la semaine dernière » en nombre de jours pour fichiers_recents."""
+    maintenant = maintenant or datetime.now()
+    jour = JOURS_SEMAINE[maintenant.weekday()]
+    return f"{PROMPT_SYSTEME} Nous sommes le {jour} {maintenant:%Y-%m-%d}."
 
 
 class ErreurClient(Exception):
@@ -208,7 +218,7 @@ async def boucle_chat(session: ClientSession, client) -> None:
     print("Outils chargés :", [t.name for t in outils_mcp])
     print(f"Modèle : {MODELE}. Tape « quit » ou Ctrl+D pour sortir.")
 
-    messages = [{"role": "system", "content": PROMPT_SYSTEME}]
+    messages = [{"role": "system", "content": prompt_systeme()}]
 
     while True:
         try:

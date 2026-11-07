@@ -1,5 +1,6 @@
 import functools
 import getpass
+import heapq
 import hmac
 import inspect
 import json
@@ -168,6 +169,16 @@ def securiser(chemin: str) -> Path:
     if not p.is_relative_to(RACINE):
         raise ValueError("Accès refusé : chemin en dehors du dossier autorisé.")
     return p
+
+
+def taille_lisible(octets: int) -> str:
+    """1536 -> '1.5 Ko'."""
+    if octets < 1024:
+        return f"{octets} o"
+    for unite in ("Ko", "Mo", "Go"):
+        octets /= 1024
+        if octets < 1024 or unite == "Go":
+            return f"{octets:.1f} {unite}"
 
 
 def normaliser_extension(ext: str) -> str:
@@ -350,6 +361,7 @@ def rechercher_fichiers(
     motif: str = "",
     extension: str = "",
     chemin: str = "",
+    jours: int = 0,
     max_resultats: int = 50,
 ) -> str:
     """Cherche récursivement des fichiers PAR LEUR NOM (pas par leur contenu).
@@ -357,11 +369,16 @@ def rechercher_fichiers(
     extension : filtre optionnel sur le type de fichier (ex: 'pdf', '.docx').
     On peut donner seulement une extension, seulement un motif, ou les deux.
     chemin : sous-dossier où chercher (vide = tout le dossier autorisé).
+    jours : si la question parle d'une période (cette semaine = 7, ce mois = 30),
+    ne garde que les fichiers modifiés ces N derniers jours, du plus récent au
+    plus ancien. 0 = pas de filtre de date.
     max_resultats : 200 au maximum."""
-    max_resultats = borner(max_resultats, 1, MAX_RESULTATS)
     dossier = securiser(chemin)
     if not dossier.is_dir():
         return "Ce chemin n'est pas un dossier."
+    if jours > 0:
+        return lister_recents(dossier, jours, motif, extension, max_resultats=max_resultats)
+    max_resultats = borner(max_resultats, 1, MAX_RESULTATS)
     motif = motif.strip().lower()
     ext = normaliser_extension(extension)
     if not motif and not ext:
@@ -433,6 +450,85 @@ def rechercher_dans_contenu(
     if not resultats:
         return f"Aucun fichier ne contient « {mot} ». {bilan}"
     return "\n".join(resultats) + f"\n{bilan}"
+
+
+@mcp.tool()
+@journaliser
+def fichiers_recents(
+    jours: int = 7,
+    motif: str = "",
+    extension: str = "",
+    chemin: str = "",
+    taille_min_ko: int = 0,
+    taille_max_ko: int = 0,
+    max_resultats: int = 20,
+) -> str:
+    """Liste les fichiers modifiés (ou téléchargés) au cours des `jours`
+    derniers jours, du plus récent au plus ancien, avec leur date et leur taille.
+    À utiliser dès que la question parle d'une période ou de récence :
+    « reçu cette semaine », « modifié hier », « mes derniers fichiers »…
+    Convertir la période en nombre de jours (cette semaine = 7, ce mois = 30).
+    motif : texte contenu dans le nom (ex: 'facture'), optionnel.
+    extension : filtre optionnel (ex: 'pdf'). chemin : sous-dossier où chercher.
+    taille_min_ko / taille_max_ko : filtres de taille en Ko (0 = pas de filtre).
+    jours : 3650 au maximum. max_resultats : 200 au maximum."""
+    dossier = securiser(chemin)
+    if not dossier.is_dir():
+        return "Ce chemin n'est pas un dossier."
+    return lister_recents(
+        dossier, jours, motif, extension, taille_min_ko, taille_max_ko, max_resultats
+    )
+
+
+def lister_recents(
+    dossier: Path,
+    jours: int,
+    motif: str = "",
+    extension: str = "",
+    taille_min_ko: int = 0,
+    taille_max_ko: int = 0,
+    max_resultats: int = 20,
+) -> str:
+    """Partagé par fichiers_recents et rechercher_fichiers (avec jours > 0)."""
+    jours = borner(jours, 1, 3650)
+    max_resultats = borner(max_resultats, 1, MAX_RESULTATS)
+    motif = motif.strip().lower()
+    ext = normaliser_extension(extension)
+    depuis = time.time() - jours * 86_400
+    taille_min = max(taille_min_ko, 0) * 1024
+    taille_max = taille_max_ko * 1024 if taille_max_ko > 0 else None
+
+    candidats = []
+    for p in parcourir(dossier):
+        # Fichiers cachés (.DS_Store) et verrous Office (~$lettre.docx) : du bruit.
+        if p.name.startswith((".", "~$")):
+            continue
+        if motif and motif not in p.name.lower():
+            continue
+        if ext and p.suffix.lower() != ext:
+            continue
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        if st.st_mtime < depuis or st.st_size < taille_min:
+            continue
+        if taille_max is not None and st.st_size > taille_max:
+            continue
+        candidats.append((st.st_mtime, st.st_size, p))
+
+    if not candidats:
+        return f"Aucun fichier modifié ces {jours} dernier(s) jour(s) avec ces critères."
+    plus_recents = heapq.nlargest(max_resultats, candidats, key=lambda c: c[0])
+    lignes = [
+        f"{datetime.fromtimestamp(date):%Y-%m-%d %H:%M}  {taille_lisible(taille):>8}  "
+        f"{p.relative_to(RACINE)}"
+        for date, taille, p in plus_recents
+    ]
+    lignes.append(
+        f"({len(candidats)} fichier(s) trouvé(s), {len(plus_recents)} affiché(s))"
+    )
+    return "\n".join(lignes)
 
 
 # ----------------------------------------------------------------------

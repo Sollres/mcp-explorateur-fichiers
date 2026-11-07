@@ -54,6 +54,13 @@ def test_historique_accepte_les_messages_ollama():
     assert tailler_historique(messages, 100) == [SYSTEME, {"role": "user", "content": "q2"}]
 
 
+def test_prompt_systeme_contient_la_date():
+    from datetime import datetime
+    prompt = client.prompt_systeme(datetime(2026, 11, 7, 15, 30))
+    assert prompt.startswith(client.PROMPT_SYSTEME)
+    assert prompt.endswith("Nous sommes le samedi 2026-11-07.")
+
+
 # --- Messages d'erreur -------------------------------------------------
 def erreur_http(code):
     requete = httpx.Request("POST", "http://x/mcp")
