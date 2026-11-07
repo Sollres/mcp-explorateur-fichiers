@@ -74,6 +74,38 @@ async def test_rechercher_fichiers_avec_jours(racine):
     assert chemins(resultat) == ["devis_nov.pdf", "facture_nov.pdf", "facture_oct.pdf"]
 
 
+async def test_motif_inutile_ignore_avec_note(racine):
+    """« Quels PDF ai-je reçus cette semaine ? » -> motif='reçu' : aucun nom
+    ne le contient, on renvoie quand même les PDF de la période."""
+    creer(racine, "facture.pdf", 2)
+    creer(racine, "vieux.pdf", 30)
+    resultat = await server.rechercher_fichiers(motif="reçu", extension="pdf", jours=7)
+    lignes = resultat.splitlines()
+    assert lignes[0].startswith("Aucun nom de fichier ne contient « reçu »")
+    assert chemins("\n".join(lignes[1:])) == ["facture.pdf"]
+
+
+async def test_motif_qui_trouve_reste_prioritaire(racine):
+    creer(racine, "facture.pdf", 2)
+    creer(racine, "devis.pdf", 1)
+    resultat = await server.fichiers_recents(motif="facture")
+    assert chemins(resultat) == ["facture.pdf"]
+    assert "Aucun nom" not in resultat
+
+
+async def test_motif_sans_extension_ni_periode_pas_de_repli(racine):
+    creer(racine, "facture.pdf", 2)
+    resultat = await server.rechercher_fichiers(motif="reçu")
+    assert resultat == "Aucun fichier dont le nom contient « reçu »."
+
+
+async def test_motif_inutile_repli_sur_extension(racine):
+    creer(racine, "facture.pdf", 2)
+    creer(racine, "notes.txt", 2)
+    resultat = await server.rechercher_fichiers(motif="reçu", extension="pdf")
+    assert resultat == "Aucun nom de fichier ne contient « reçu ». Voici les fichiers .pdf :\nfacture.pdf"
+
+
 async def test_rechercher_fichiers_sans_jours_inchange(racine):
     creer(racine, "facture_oct.pdf", 20)
     assert await server.rechercher_fichiers(motif="facture") == "facture_oct.pdf"

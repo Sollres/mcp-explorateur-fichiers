@@ -10,7 +10,9 @@ Le modèle peut être changé avec OLLAMA_MODELE (défaut : qwen2.5:7b).
 import asyncio
 import os
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
 import httpx
 import ollama
@@ -20,6 +22,9 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import McpError
 
 MODELE = os.environ.get("OLLAMA_MODELE", "qwen2.5:7b")
+
+# Chemin absolu : le client (ou l'interface) peut être lancé depuis n'importe où.
+SERVEUR = Path(__file__).resolve().parent / "server.py"
 
 # Fenêtre de contexte demandée à Ollama (en tokens). Sans ce réglage,
 # Ollama utilise une petite fenêtre par défaut et "oublie" vite.
@@ -177,8 +182,22 @@ async def demander_modele(client, messages: list, outils: list | None):
     return reponse.message
 
 
-async def repondre(session: ClientSession, client, messages: list, outils: list) -> str:
-    """Fait tourner le modèle (et ses appels d'outils) jusqu'à une réponse."""
+def afficher_etape(evenement: dict) -> None:
+    """Affichage des étapes dans le terminal."""
+    if evenement["type"] == "outil":
+        print(f"   [outil] {evenement['nom']}({evenement['args']})")
+    elif evenement["type"] == "limite":
+        print("   (limite d'appels d'outils atteinte, réponse avec ce qui a été trouvé)")
+
+
+async def repondre(
+    session: ClientSession, client, messages: list, outils: list, etape=afficher_etape
+) -> str:
+    """Fait tourner le modèle (et ses appels d'outils) jusqu'à une réponse.
+    `etape` est appelé à chaque étape avec un dict :
+      {"type": "outil", "nom", "args"}     : le modèle appelle un outil
+      {"type": "resultat", "nom", "texte"} : résultat de cet outil
+      {"type": "limite"}                   : trop d'appels, réponse forcée"""
     for _ in range(MAX_APPELS_PAR_QUESTION):
         msg = await demander_modele(client, messages, outils)
         messages.append(msg)
@@ -188,23 +207,40 @@ async def repondre(session: ClientSession, client, messages: list, outils: list)
         for appel in msg.tool_calls:
             nom = appel.function.name
             args = dict(appel.function.arguments)
-            print(f"   [outil] {nom}({args})")
+            etape({"type": "outil", "nom": nom, "args": args})
             texte = await appeler_outil(session, nom, args)
+            etape({"type": "resultat", "nom": nom, "texte": texte})
             messages.append({"role": "tool", "content": texte, "tool_name": nom})
 
     # Trop d'appels : on force une réponse finale, sans outils.
-    print("   (limite d'appels d'outils atteinte, réponse avec ce qui a été trouvé)")
+    etape({"type": "limite"})
     msg = await demander_modele(client, messages, None)
     messages.append(msg)
     return msg.content
 
 
-async def boucle_chat(session: ClientSession, client) -> None:
-    """Conversation avec le modèle, identique quel que soit le transport."""
-    await session.initialize()
+async def poser_question(
+    session: ClientSession, client, messages: list, outils: list, question: str,
+    etape=afficher_etape,
+) -> str:
+    """Ajoute la question à l'historique et obtient la réponse.
+    En cas d'erreur (ou d'annulation), la question et tout ce qui a suivi
+    sont retirés de l'historique pour qu'il reste cohérent (jamais d'appel
+    d'outil sans son résultat), puis l'erreur remonte."""
+    message_question = {"role": "user", "content": question}
+    messages.append(message_question)
+    messages[:] = tailler_historique(messages, MAX_CARACTERES_HISTORIQUE)
+    try:
+        return await repondre(session, client, messages, outils, etape)
+    except BaseException:
+        i = next(i for i, m in enumerate(messages) if m is message_question)
+        del messages[i:]
+        raise
 
-    outils_mcp = (await session.list_tools()).tools
-    outils = [
+
+def outils_pour_ollama(outils_mcp) -> list:
+    """Convertit les outils MCP au format attendu par Ollama."""
+    return [
         {
             "type": "function",
             "function": {
@@ -215,6 +251,37 @@ async def boucle_chat(session: ClientSession, client) -> None:
         }
         for t in outils_mcp
     ]
+
+
+@asynccontextmanager
+async def connecter(url: str = "", jeton: str = ""):
+    """Ouvre une session MCP initialisée.
+    Sans url : lance server.py en local (stdio). Avec url : serveur HTTP."""
+    if url:
+        if not jeton:
+            raise ErreurClient('Définis le jeton : export MCP_TOKEN="ton_jeton"')
+        http = httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {jeton}"},
+            # Délais par défaut des transports MCP : 30 s, et 5 min en lecture
+            # car le serveur peut garder un flux de réponse ouvert.
+            timeout=httpx.Timeout(30, read=300),
+        )
+        async with http, streamable_http_client(url, http_client=http) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                yield session
+    else:
+        params = StdioServerParameters(command=sys.executable, args=[str(SERVEUR)])
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                yield session
+
+
+async def boucle_chat(session: ClientSession, client) -> None:
+    """Conversation dans le terminal, identique quel que soit le transport."""
+    outils_mcp = (await session.list_tools()).tools
+    outils = outils_pour_ollama(outils_mcp)
     print("Outils chargés :", [t.name for t in outils_mcp])
     print(f"Modèle : {MODELE}. Tape « quit » ou Ctrl+D pour sortir.")
 
@@ -237,15 +304,9 @@ async def boucle_chat(session: ClientSession, client) -> None:
             print(await appeler_outil(session, "lister_dossier", {"chemin": chemin}))
             continue
 
-        message_question = {"role": "user", "content": question}
-        messages.append(message_question)
-        messages[:] = tailler_historique(messages, MAX_CARACTERES_HISTORIQUE)
         try:
-            reponse = await repondre(session, client, messages, outils)
+            reponse = await poser_question(session, client, messages, outils, question)
         except ErreurClient as e:
-            # Question annulée : on retire la question et tout ce qui a suivi.
-            i = next(i for i, m in enumerate(messages) if m is message_question)
-            del messages[i:]
             print(f"\n⚠️  {e}")
             continue
         print(f"\nIA > {reponse}")
@@ -255,28 +316,11 @@ async def main() -> None:
     client = ollama.AsyncClient()
     await verifier_ollama(client)
 
-    if len(sys.argv) > 1:
-        # --- Mode HTTP : serveur distant ---
-        url = sys.argv[1]
-        jeton = os.environ.get("MCP_TOKEN", "")
-        if not jeton:
-            raise ErreurClient('Définis le jeton : export MCP_TOKEN="ton_jeton"')
-        http = httpx.AsyncClient(
-            headers={"Authorization": f"Bearer {jeton}"},
-            # Délais par défaut des transports MCP : 30 s, et 5 min en lecture
-            # car le serveur peut garder un flux de réponse ouvert.
-            timeout=httpx.Timeout(30, read=300),
-        )
+    url = sys.argv[1] if len(sys.argv) > 1 else ""
+    if url:
         print(f"Connexion à {url} ...")
-        async with http, streamable_http_client(url, http_client=http) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await boucle_chat(session, client)
-    else:
-        # --- Mode stdio : serveur local lancé par le client ---
-        params = StdioServerParameters(command=sys.executable, args=["server.py"])
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await boucle_chat(session, client)
+    async with connecter(url, os.environ.get("MCP_TOKEN", "")) as session:
+        await boucle_chat(session, client)
 
 
 if __name__ == "__main__":

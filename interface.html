@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Explorateur de fichiers</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M3 8a3 3 0 0 1 3-3h6l3 3h11a3 3 0 0 1 3 3v13a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z' fill='%234f6bed'/></svg>">
+<style>
+  :root {
+    --fond: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --bord: #e2e5ea;
+    --texte: #1d2129;
+    --texte-2: #5d6573;
+    --accent: #4f6bed;
+    --accent-texte: #ffffff;
+    --accent-doux: #eef1fd;
+    --erreur: #b42318;
+    --erreur-fond: #fef3f2;
+    --ombre: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+    --rayon: 14px;
+    --police: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fond: #121417;
+      --surface: #1b1e23;
+      --surface-2: #23272e;
+      --bord: #2e333b;
+      --texte: #e8eaed;
+      --texte-2: #9aa2ae;
+      --accent: #7b93ff;
+      --accent-texte: #0e1220;
+      --accent-doux: #222a45;
+      --erreur: #ff8a80;
+      --erreur-fond: #3a1d1b;
+      --ombre: 0 1px 2px rgba(0, 0, 0, .4);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--fond);
+    color: var(--texte);
+    font: 15px/1.55 var(--police);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* --- En-tête --- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--bord);
+  }
+  .logo {
+    width: 34px; height: 34px; flex: none;
+    border-radius: 9px;
+    background: var(--accent-doux);
+    display: grid; place-items: center;
+  }
+  .logo svg { width: 20px; height: 20px; fill: var(--accent); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .statut { font-size: 12.5px; color: var(--texte-2); display: flex; align-items: center; gap: 6px; }
+  .point { width: 7px; height: 7px; border-radius: 50%; background: #9aa2ae; }
+  .point.ok { background: #12b76a; }
+  .point.ko { background: var(--erreur); }
+  header .espace { flex: 1; }
+  button.secondaire {
+    font: inherit; font-size: 13.5px;
+    color: var(--texte);
+    background: var(--surface);
+    border: 1px solid var(--bord);
+    border-radius: 9px;
+    padding: 7px 12px;
+    cursor: pointer;
+  }
+  button.secondaire:hover { background: var(--surface-2); }
+  button.secondaire { display: inline-flex; align-items: center; gap: 6px; }
+  button.secondaire svg { width: 15px; height: 15px; fill: currentColor; flex: none; }
+  .actions { display: flex; gap: 8px; }
+
+  /* --- Panneau « Outils » --- */
+  dialog {
+    width: min(680px, calc(100vw - 32px));
+    max-height: min(82vh, 760px);
+    padding: 0;
+    border: 1px solid var(--bord);
+    border-radius: 16px;
+    background: var(--fond);
+    color: var(--texte);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, .25);
+  }
+  dialog::backdrop { background: rgba(15, 18, 25, .45); }
+  .panneau-tete {
+    position: sticky; top: 0; z-index: 1;
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 18px 12px;
+    background: var(--fond);
+    border-bottom: 1px solid var(--bord);
+  }
+  .titres-panneau { flex: 1; min-width: 0; }
+  .panneau-tete h2 { font-size: 17px; margin: 0; }
+  .panneau-tete p { margin: 2px 0 0; font-size: 13px; color: var(--texte-2); font-weight: 400; }
+  .fermer {
+    width: 32px; height: 32px; flex: none;
+    border: 0; border-radius: 8px;
+    background: transparent; color: var(--texte-2);
+    font-size: 20px; line-height: 1; cursor: pointer;
+  }
+  .fermer:hover { background: var(--surface-2); color: var(--texte); }
+  #liste-outils { padding: 14px 18px 18px; display: grid; gap: 10px; outline: none; }
+  .outil {
+    background: var(--surface);
+    border: 1px solid var(--bord);
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .outil-tete { display: flex; align-items: center; gap: 10px; }
+  .outil-tete .emoji {
+    width: 34px; height: 34px; flex: none;
+    display: grid; place-items: center;
+    border-radius: 9px; background: var(--accent-doux); font-size: 17px;
+  }
+  .outil-tete .titres { flex: 1; min-width: 0; }
+  .outil-tete h3 { margin: 0; font-size: 14.5px; }
+  .outil-tete code { font: 12px var(--mono); color: var(--texte-2); }
+  .outil-tete .essayer { font-size: 12.5px; padding: 5px 10px; }
+  .outil > p { margin: 8px 0 0; font-size: 13.5px; }
+  .params { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .param {
+    font-size: 12px; color: var(--texte-2);
+    background: var(--surface-2);
+    border-radius: 6px; padding: 2px 8px;
+  }
+  .param code { font: 12px var(--mono); color: var(--texte); }
+  .param.requis code::after { content: " *"; color: var(--accent); }
+  .outil details { margin-top: 8px; font-size: 12.5px; }
+  .outil details summary { cursor: pointer; color: var(--texte-2); }
+  .outil details pre {
+    margin: 6px 0 0; padding: 8px 10px;
+    background: var(--surface-2); border-radius: 8px;
+    font: 12px/1.5 var(--mono); white-space: pre-wrap;
+  }
+  .legende { font-size: 12px; color: var(--texte-2); padding: 0 18px 16px; margin: -6px 0 0; }
+
+  /* --- Conversation --- */
+  main { flex: 1; overflow-y: auto; }
+  #fil { max-width: 820px; margin: 0 auto; padding: 24px 16px 8px; }
+
+  .accueil { text-align: center; padding: 8vh 8px 24px; }
+  .accueil h2 { font-size: 24px; margin: 14px 0 6px; font-weight: 600; }
+  .accueil p { color: var(--texte-2); margin: 0 0 22px; }
+  .accueil .logo { width: 56px; height: 56px; border-radius: 16px; margin: 0 auto; }
+  .accueil .logo svg { width: 30px; height: 30px; }
+  .suggestions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; text-align: left; }
+  .suggestions button {
+    font: inherit; font-size: 14px; text-align: left;
+    color: var(--texte);
+    background: var(--surface);
+    border: 1px solid var(--bord);
+    border-radius: 12px;
+    padding: 12px 14px;
+    cursor: pointer;
+    box-shadow: var(--ombre);
+  }
+  .suggestions button:hover { border-color: var(--accent); }
+  .suggestions span { display: block; font-size: 12.5px; color: var(--texte-2); margin-bottom: 2px; }
+
+  .message { display: flex; margin: 14px 0; }
+  .message.moi { justify-content: flex-end; }
+  .bulle {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: var(--rayon);
+    overflow-wrap: anywhere;
+  }
+  .moi .bulle { background: var(--accent); color: var(--accent-texte); border-bottom-right-radius: 4px; white-space: pre-wrap; }
+  .ia .bulle { background: var(--surface); border: 1px solid var(--bord); border-bottom-left-radius: 4px; box-shadow: var(--ombre); }
+  .ia .bulle.erreur { background: var(--erreur-fond); border-color: transparent; color: var(--erreur); }
+
+  /* Étapes (appels d'outils) */
+  .etapes { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .etapes:empty { display: none; }
+  details.etape {
+    font-size: 13px;
+    background: var(--surface-2);
+    border-radius: 9px;
+    padding: 6px 10px;
+  }
+  details.etape summary { cursor: pointer; color: var(--texte-2); list-style: none; display: flex; gap: 6px; align-items: baseline; }
+  details.etape summary::-webkit-details-marker { display: none; }
+  details.etape summary b { color: var(--texte); font-weight: 600; flex: none; white-space: nowrap; }
+  details.etape summary .args { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  details.etape pre {
+    margin: 8px 0 2px;
+    max-height: 260px; overflow: auto;
+    font: 12px/1.5 var(--mono);
+    white-space: pre-wrap;
+    color: var(--texte);
+  }
+  .attente { color: var(--texte-2); font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .attente i { width: 6px; height: 6px; border-radius: 50%; background: var(--texte-2); animation: rebond 1.2s infinite ease-in-out; }
+  .attente i:nth-child(2) { animation-delay: .15s; }
+  .attente i:nth-child(3) { animation-delay: .3s; }
+  @keyframes rebond { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+
+  /* Texte de réponse (Markdown simplifié) */
+  .contenu > :first-child { margin-top: 0; }
+  .contenu > :last-child { margin-bottom: 0; }
+  .contenu p { margin: 0 0 8px; }
+  .contenu ul, .contenu ol { margin: 4px 0 8px; padding-left: 22px; }
+  .contenu li { margin: 2px 0; }
+  .contenu h3 { font-size: 15px; margin: 12px 0 6px; }
+  .contenu code { font: 13px var(--mono); background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+  .contenu pre { background: var(--surface-2); padding: 10px; border-radius: 8px; overflow-x: auto; }
+  .contenu pre code { background: none; padding: 0; }
+
+  /* --- Zone de saisie --- */
+  footer { padding: 10px 16px 18px; }
+  form {
+    max-width: 820px; margin: 0 auto;
+    display: flex; align-items: flex-end; gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--bord);
+    border-radius: 16px;
+    padding: 8px 8px 8px 14px;
+    box-shadow: var(--ombre);
+  }
+  form:focus-within { border-color: var(--accent); }
+  textarea {
+    flex: 1;
+    border: 0; outline: 0; resize: none;
+    background: transparent; color: var(--texte);
+    font: inherit;
+    max-height: 180px;
+    padding: 6px 0;
+  }
+  textarea::placeholder { color: var(--texte-2); }
+  #envoyer {
+    flex: none;
+    width: 38px; height: 38px;
+    border: 0; border-radius: 11px;
+    background: var(--accent); color: var(--accent-texte);
+    cursor: pointer;
+    display: grid; place-items: center;
+  }
+  #envoyer:disabled { opacity: .4; cursor: default; }
+  #envoyer svg { width: 18px; height: 18px; fill: currentColor; }
+  .aide { max-width: 820px; margin: 6px auto 0; font-size: 12px; color: var(--texte-2); text-align: center; }
+
+  header h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header > div:nth-child(2) { min-width: 0; }
+  button.secondaire { white-space: nowrap; }
+  .court { display: none; }
+
+  @media (max-width: 560px) {
+    header { padding: 10px 16px; gap: 10px; }
+    header .espace { display: none; }
+    header > div:nth-child(2) { flex: 1; }
+    .actions { gap: 6px; }
+    button.secondaire { padding: 7px 10px; }
+    header .statut .detail { display: none; }
+    .long { display: none; }
+    .court { display: inline; }
+    .bulle { max-width: 92%; }
+    .suggestions { grid-template-columns: 1fr; }
+    .accueil { padding-top: 4vh; }
+    .aide { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h4.6l2.2 2.2h8.2A2.5 2.5 0 0 1 22 8.7v9.8a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 18.5z"/></svg>
+  </div>
+  <div>
+    <h1>Explorateur de fichiers</h1>
+    <div class="statut"><span class="point" id="point"></span><span id="statut">Connexion…</span></div>
+  </div>
+  <div class="espace"></div>
+  <div class="actions">
+    <button class="secondaire" id="ouvrir-outils" type="button" aria-label="Voir les outils disponibles">
+      <svg viewBox="0 0 24 24"><path d="M3 4h7v7H3zm11 0h7v7h-7zM3 13h7v7H3zm11 0h7v7h-7z"/></svg>
+      <span class="long">Outils</span><span id="nb-outils"></span>
+    </button>
+    <button class="secondaire" id="nouvelle" type="button"><span class="long">Nouvelle conversation</span><span class="court" aria-label="Nouvelle conversation">＋</span></button>
+  </div>
+</header>
+
+<dialog id="panneau-outils" aria-labelledby="titre-outils">
+  <div class="panneau-tete">
+    <div class="titres-panneau">
+      <h2 id="titre-outils">Outils disponibles</h2>
+      <p>Le modèle choisit lui-même quel outil utiliser selon ta question.</p>
+    </div>
+    <button class="fermer" type="button" aria-label="Fermer">×</button>
+  </div>
+  <!-- autofocus : à l'ouverture, le focus va sur la liste (et non sur la croix) -->
+  <div id="liste-outils" tabindex="-1" autofocus></div>
+  <p class="legende"><code>*</code> paramètre obligatoire · « Essayer » pré-remplit une question d'exemple</p>
+</dialog>
+
+<main id="defilement">
+  <div id="fil"></div>
+</main>
+
+<footer>
+  <form id="formulaire">
+    <textarea id="question" rows="1" placeholder="Pose une question sur tes fichiers…" autofocus></textarea>
+    <button id="envoyer" type="submit" aria-label="Envoyer" disabled>
+      <svg viewBox="0 0 24 24"><path d="M3.4 20.4 21 12 3.4 3.6l-.01 6.53L15 12 3.39 13.87z"/></svg>
+    </button>
+  </form>
+  <div class="aide">Entrée pour envoyer · Maj+Entrée pour aller à la ligne · le modèle tourne en local, tes fichiers ne quittent pas ta machine</div>
+</footer>
+
+<template id="modele-accueil">
+  <div class="accueil">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h4.6l2.2 2.2h8.2A2.5 2.5 0 0 1 22 8.7v9.8a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 18.5z"/></svg>
+    </div>
+    <h2>Que cherches-tu ?</h2>
+    <p>Je peux parcourir, rechercher et lire tes documents : PDF, Word, Excel, PowerPoint, texte.</p>
+    <div class="suggestions">
+      <button type="button"><span>Fichiers récents</span>Quels PDF ai-je reçus cette semaine ?</button>
+      <button type="button"><span>Recherche dans le contenu</span>Quels documents parlent de facture ?</button>
+      <button type="button"><span>Navigation</span>Que contient mon dossier Documents ?</button>
+      <button type="button"><span>Gros fichiers</span>Quels fichiers de plus de 5 Mo ai-je modifiés ce mois-ci ?</button>
+    </div>
+  </div>
+</template>
+
+<script>
+"use strict";
+
+const fil = document.getElementById("fil");
+const defilement = document.getElementById("defilement");
+const formulaire = document.getElementById("formulaire");
+const champ = document.getElementById("question");
+const bouton = document.getElementById("envoyer");
+
+// Présentation de chaque outil : icône, nom lisible, question d'exemple.
+const OUTILS = {
+  lister_dossier: { emoji: "📂", titre: "Ouverture du dossier", exemple: "Que contient mon dossier Documents ?" },
+  rechercher_fichiers: { emoji: "🔎", titre: "Recherche par nom", exemple: "Trouve mes fichiers dont le nom contient « facture »" },
+  rechercher_dans_contenu: { emoji: "🔍", titre: "Recherche dans le contenu", exemple: "Quels documents parlent de loyer ?" },
+  fichiers_recents: { emoji: "🕒", titre: "Fichiers récents", exemple: "Quels fichiers ai-je modifiés hier ?" },
+  lire_fichier: { emoji: "📄", titre: "Lecture d'un fichier texte", exemple: "Lis mon fichier de notes le plus récent" },
+  lire_pdf: { emoji: "📕", titre: "Lecture d'un PDF", exemple: "Résume mon PDF le plus récent" },
+  lire_word: { emoji: "📘", titre: "Lecture d'un document Word", exemple: "Lis ma dernière lettre de motivation" },
+  lire_excel: { emoji: "📗", titre: "Lecture d'un classeur Excel", exemple: "Que contient mon classeur Excel le plus récent ?" },
+  lire_powerpoint: { emoji: "📙", titre: "Lecture d'une présentation", exemple: "Résume ma dernière présentation PowerPoint" },
+};
+const TYPES = { string: "texte", integer: "nombre", number: "nombre", boolean: "oui/non" };
+
+function presentation(nom) {
+  return OUTILS[nom] || { emoji: "🔧", titre: nom, exemple: "" };
+}
+
+let conversation = nouvelId();
+let occupe = false;
+
+function nouvelId() {
+  return (crypto.randomUUID && crypto.randomUUID()) || String(Date.now() + Math.random());
+}
+
+// --- Petit rendu Markdown (le texte est échappé AVANT toute mise en forme) ---
+function echapper(t) {
+  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function enLigne(t) {
+  return t
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+function markdown(texte) {
+  const lignes = echapper(texte).split("\n");
+  let html = "", liste = null, code = null;
+  const fermerListe = () => { if (liste) { html += `</${liste}>`; liste = null; } };
+  for (const ligne of lignes) {
+    if (ligne.trim().startsWith("```")) {
+      if (code === null) { fermerListe(); code = []; }
+      else { html += `<pre><code>${code.join("\n")}</code></pre>`; code = null; }
+      continue;
+    }
+    if (code !== null) { code.push(ligne); continue; }
+    const puce = ligne.match(/^\s*[-*•]\s+(.*)/);
+    const numero = ligne.match(/^\s*\d+[.)]\s+(.*)/);
+    const titre = ligne.match(/^#{1,4}\s+(.*)/);
+    if (puce || numero) {
+      const type = puce ? "ul" : "ol";
+      if (liste !== type) { fermerListe(); html += `<${type}>`; liste = type; }
+      html += `<li>${enLigne((puce || numero)[1])}</li>`;
+    } else if (titre) {
+      fermerListe(); html += `<h3>${enLigne(titre[1])}</h3>`;
+    } else if (ligne.trim() === "") {
+      fermerListe();
+    } else {
+      fermerListe(); html += `<p>${enLigne(ligne)}</p>`;
+    }
+  }
+  fermerListe();
+  if (code !== null) html += `<pre><code>${code.join("\n")}</code></pre>`;
+  return html;
+}
+
+// --- Affichage ---
+function afficherAccueil() {
+  fil.replaceChildren(document.getElementById("modele-accueil").content.cloneNode(true));
+  fil.querySelectorAll(".suggestions button").forEach((b) => {
+    b.addEventListener("click", () => envoyer(b.lastChild.textContent.trim()));
+  });
+}
+
+function enBas() {
+  defilement.scrollTop = defilement.scrollHeight;
+}
+
+function ajouterMessageMoi(texte) {
+  const div = document.createElement("div");
+  div.className = "message moi";
+  div.innerHTML = `<div class="bulle"></div>`;
+  div.firstChild.textContent = texte;
+  fil.appendChild(div);
+}
+
+function ajouterMessageIA() {
+  const div = document.createElement("div");
+  div.className = "message ia";
+  div.innerHTML = `
+    <div class="bulle">
+      <div class="etapes"></div>
+      <div class="attente"><i></i><i></i><i></i><span>Réflexion…</span></div>
+      <div class="contenu"></div>
+    </div>`;
+  fil.appendChild(div);
+  return {
+    bulle: div.querySelector(".bulle"),
+    etapes: div.querySelector(".etapes"),
+    attente: div.querySelector(".attente"),
+    contenu: div.querySelector(".contenu"),
+  };
+}
+
+function formaterArgs(args) {
+  return Object.entries(args || {})
+    .filter(([, v]) => v !== "" && v !== 0 && v !== null)
+    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+    .join(", ");
+}
+
+function traiterEvenement(ev, vue) {
+  if (ev.type === "outil") {
+    const etape = document.createElement("details");
+    etape.className = "etape";
+    etape.dataset.nom = ev.nom;
+    etape.innerHTML = `<summary><b></b><span class="args"></span></summary><pre>…</pre>`;
+    const p = presentation(ev.nom);
+    etape.querySelector("b").textContent = `${p.emoji} ${p.titre}`;
+    etape.querySelector(".args").textContent = formaterArgs(ev.args);
+    etape.title = "Cliquer pour voir le résultat de l'outil";
+    vue.etapes.appendChild(etape);
+    vue.attente.querySelector("span").textContent = "Recherche en cours…";
+  } else if (ev.type === "resultat") {
+    const etapes = [...vue.etapes.querySelectorAll(`details[data-nom="${ev.nom}"]`)];
+    const derniere = etapes[etapes.length - 1];
+    if (derniere) derniere.querySelector("pre").textContent = ev.texte;
+    vue.attente.querySelector("span").textContent = "Réflexion…";
+  } else if (ev.type === "limite") {
+    vue.attente.querySelector("span").textContent = "Synthèse de ce qui a été trouvé…";
+  } else if (ev.type === "reponse") {
+    vue.attente.remove();
+    vue.contenu.innerHTML = markdown(ev.texte || "(réponse vide)");
+  } else if (ev.type === "erreur") {
+    vue.attente.remove();
+    vue.bulle.classList.add("erreur");
+    vue.contenu.textContent = "⚠️ " + ev.texte;
+  }
+  enBas();
+}
+
+// --- Envoi d'une question, réponse reçue au fil de l'eau ---
+async function envoyer(question) {
+  question = question.trim();
+  if (!question || occupe) return;
+  occupe = true;
+  majBouton();
+  if (fil.querySelector(".accueil")) fil.replaceChildren();
+  ajouterMessageMoi(question);
+  const vue = ajouterMessageIA();
+  enBas();
+
+  try {
+    const reponse = await fetch("/api/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation, question }),
+    });
+    if (!reponse.ok) {
+      const corps = await reponse.json().catch(() => ({}));
+      throw new Error(corps.erreur || `Erreur ${reponse.status}`);
+    }
+    const lecteur = reponse.body.getReader();
+    const decodeur = new TextDecoder();
+    let tampon = "";
+    for (;;) {
+      const { value, done } = await lecteur.read();
+      if (done) break;
+      tampon += decodeur.decode(value, { stream: true });
+      let fin;
+      while ((fin = tampon.indexOf("\n")) >= 0) {
+        const ligne = tampon.slice(0, fin).trim();
+        tampon = tampon.slice(fin + 1);
+        if (ligne) traiterEvenement(JSON.parse(ligne), vue);
+      }
+    }
+  } catch (e) {
+    const message = e instanceof TypeError
+      ? "Impossible de joindre l'interface. Est-elle toujours lancée ?"
+      : e.message;
+    traiterEvenement({ type: "erreur", texte: message }, vue);
+  } finally {
+    if (vue.attente.isConnected) vue.attente.remove();
+    occupe = false;
+    majBouton();
+    champ.focus();
+  }
+}
+
+// --- Zone de saisie ---
+function majBouton() {
+  bouton.disabled = occupe || !champ.value.trim();
+}
+function ajusterHauteur() {
+  champ.style.height = "auto";
+  champ.style.height = champ.scrollHeight + "px";
+}
+champ.addEventListener("input", () => { ajusterHauteur(); majBouton(); });
+champ.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    formulaire.requestSubmit();
+  }
+});
+formulaire.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (occupe || !champ.value.trim()) return;
+  const question = champ.value;
+  champ.value = "";
+  ajusterHauteur();
+  envoyer(question);
+});
+document.getElementById("nouvelle").addEventListener("click", () => {
+  if (occupe) return;
+  conversation = nouvelId();
+  afficherAccueil();
+  champ.focus();
+});
+
+// --- Panneau « Outils » ---
+const panneau = document.getElementById("panneau-outils");
+
+function afficherOutils(outils) {
+  const liste = document.getElementById("liste-outils");
+  liste.replaceChildren();
+  for (const outil of outils) {
+    const p = presentation(outil.nom);
+    const carte = document.createElement("article");
+    carte.className = "outil";
+    carte.innerHTML = `
+      <div class="outil-tete">
+        <span class="emoji"></span>
+        <div class="titres"><h3></h3><code></code></div>
+      </div>
+      <p></p>
+      <div class="params"></div>
+      <details><summary>Description complète (celle que lit le modèle)</summary><pre></pre></details>`;
+    carte.querySelector(".emoji").textContent = p.emoji;
+    carte.querySelector("h3").textContent = p.titre;
+    carte.querySelector("code").textContent = outil.nom;
+    carte.querySelector("p").textContent = outil.resume;
+    carte.querySelector("pre").textContent = outil.description;
+
+    for (const param of outil.parametres) {
+      const puce = document.createElement("span");
+      puce.className = "param" + (param.obligatoire ? " requis" : "");
+      puce.innerHTML = "<code></code> <span></span>";
+      puce.querySelector("code").textContent = param.nom;
+      let detail = TYPES[param.type] || param.type || "";
+      if (param.defaut !== null && param.defaut !== undefined && param.defaut !== "") {
+        detail += ` · défaut ${param.defaut}`;
+      }
+      puce.querySelector("span").textContent = detail;
+      carte.querySelector(".params").appendChild(puce);
+    }
+    if (!outil.parametres.length) carte.querySelector(".params").remove();
+
+    if (p.exemple) {
+      const essayer = document.createElement("button");
+      essayer.className = "secondaire essayer";
+      essayer.type = "button";
+      essayer.textContent = "Essayer";
+      essayer.title = `Pré-remplir : « ${p.exemple} »`;
+      essayer.addEventListener("click", () => {
+        panneau.close();
+        champ.value = p.exemple;
+        ajusterHauteur();
+        majBouton();
+        champ.focus();
+      });
+      carte.querySelector(".outil-tete").appendChild(essayer);
+    }
+    liste.appendChild(carte);
+  }
+}
+
+document.getElementById("ouvrir-outils").addEventListener("click", () => panneau.showModal());
+panneau.querySelector(".fermer").addEventListener("click", () => panneau.close());
+// Un clic sur le fond assombri (hors du panneau) le ferme aussi.
+panneau.addEventListener("click", (e) => { if (e.target === panneau) panneau.close(); });
+
+// --- État de la connexion ---
+fetch("/api/etat")
+  .then((r) => r.json())
+  .then((etat) => {
+    document.getElementById("point").classList.add("ok");
+    document.getElementById("statut").innerHTML =
+      `Connecté <span class="detail">· ${echapper(etat.modele)} · ${etat.outils.length} outils</span>`;
+    document.getElementById("nb-outils").textContent = `(${etat.outils.length})`;
+    afficherOutils(etat.outils);
+  })
+  .catch(() => {
+    document.getElementById("point").classList.add("ko");
+    document.getElementById("statut").textContent = "Interface injoignable";
+  });
+
+afficherAccueil();
+</script>
+</body>
+</html>

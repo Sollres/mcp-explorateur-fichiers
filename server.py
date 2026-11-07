@@ -29,7 +29,9 @@ from starlette.responses import JSONResponse
 HOTE = os.environ.get("MCP_HOST", "127.0.0.1")
 PORT = int(os.environ.get("MCP_PORT", "8000"))
 
-mcp = FastMCP("explorateur-fichiers", host=HOTE, port=PORT)
+# log_level WARNING : pas de ligne « Processing request… » à chaque appel
+# (le journal d'audit garde déjà une trace de tous les appels).
+mcp = FastMCP("explorateur-fichiers", host=HOTE, port=PORT, log_level="WARNING")
 
 # Le SEUL dossier auquel le serveur a accès. Change-le si besoin.
 RACINE = (Path.home() / "Documents").resolve()
@@ -365,7 +367,9 @@ def rechercher_fichiers(
     max_resultats: int = 50,
 ) -> str:
     """Cherche récursivement des fichiers PAR LEUR NOM (pas par leur contenu).
-    motif : texte contenu dans le nom, insensible à la casse (ex: 'facture').
+    motif : texte contenu dans le NOM du fichier, insensible à la casse
+    (ex: 'facture'). Pas un mot de la question comme 'reçu' ou 'PDF' :
+    pour un type de fichier, utiliser `extension`.
     extension : filtre optionnel sur le type de fichier (ex: 'pdf', '.docx').
     On peut donner seulement une extension, seulement un motif, ou les deux.
     chemin : sous-dossier où chercher (vide = tout le dossier autorisé).
@@ -393,6 +397,21 @@ def rechercher_fichiers(
         resultats.append(str(p.relative_to(RACINE)))
         if len(resultats) >= max_resultats:
             break
+    if not resultats and motif and ext:
+        # Même filet de sécurité que pour les fichiers récents : on retombe
+        # sur l'extension seule, en le signalant.
+        sans_motif = [
+            str(p.relative_to(RACINE))
+            for p, _ in zip(
+                (p for p in parcourir(dossier) if p.suffix.lower() == ext),
+                range(max_resultats),
+            )
+        ]
+        if sans_motif:
+            return (f"Aucun nom de fichier ne contient « {motif} ». Voici les "
+                    f"fichiers {ext} :\n" + "\n".join(sans_motif))
+    if not resultats and motif:
+        return f"Aucun fichier dont le nom contient « {motif} »."
     return "\n".join(resultats) or "Aucun fichier trouvé."
 
 
@@ -468,7 +487,8 @@ def fichiers_recents(
     À utiliser dès que la question parle d'une période ou de récence :
     « reçu cette semaine », « modifié hier », « mes derniers fichiers »…
     Convertir la période en nombre de jours (cette semaine = 7, ce mois = 30).
-    motif : texte contenu dans le nom (ex: 'facture'), optionnel.
+    motif : texte contenu dans le NOM du fichier (ex: 'facture'), optionnel.
+    Laisser vide si la question ne donne pas de mot du nom du fichier.
     extension : filtre optionnel (ex: 'pdf'). chemin : sous-dossier où chercher.
     taille_min_ko / taille_max_ko : filtres de taille en Ko (0 = pas de filtre).
     jours : 3650 au maximum. max_resultats : 200 au maximum."""
@@ -498,12 +518,10 @@ def lister_recents(
     taille_min = max(taille_min_ko, 0) * 1024
     taille_max = taille_max_ko * 1024 if taille_max_ko > 0 else None
 
-    candidats = []
+    candidats = []  # tous les critères SAUF le motif
     for p in parcourir(dossier):
         # Fichiers cachés (.DS_Store) et verrous Office (~$lettre.docx) : du bruit.
         if p.name.startswith((".", "~$")):
-            continue
-        if motif and motif not in p.name.lower():
             continue
         if ext and p.suffix.lower() != ext:
             continue
@@ -517,10 +535,23 @@ def lister_recents(
             continue
         candidats.append((st.st_mtime, st.st_size, p))
 
+    # Les petits modèles mettent parfois un mot de la question dans `motif`
+    # (« reçu »…). Si le motif ne donne rien mais que la période trouve des
+    # fichiers, on les renvoie quand même, en le signalant clairement.
+    note = ""
+    if motif:
+        avec_motif = [c for c in candidats if motif in c[2].name.lower()]
+        if avec_motif or not candidats:
+            candidats = avec_motif
+        else:
+            note = (f"Aucun nom de fichier ne contient « {motif} ». "
+                    "Voici les fichiers qui correspondent aux autres critères :")
+
     if not candidats:
         return f"Aucun fichier modifié ces {jours} dernier(s) jour(s) avec ces critères."
     plus_recents = heapq.nlargest(max_resultats, candidats, key=lambda c: c[0])
-    lignes = [
+    lignes = [note] if note else []
+    lignes += [
         f"{datetime.fromtimestamp(date):%Y-%m-%d %H:%M}  {taille_lisible(taille):>8}  "
         f"{p.relative_to(RACINE)}"
         for date, taille, p in plus_recents
